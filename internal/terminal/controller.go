@@ -810,7 +810,7 @@ func (c *Controller) ShowSettlement(s game.Settlement) {
 			fmt.Fprintln(c.Out, "手牌")
 			fmt.Fprint(c.Out, normalCards(win.Hand, 14, false, false))
 		} else {
-			fmt.Fprintf(c.Out, "手牌  %s\n", c.settlementTiles(win.Hand))
+			fmt.Fprintf(c.Out, "手牌  %s\n", stealthGrouped(win.Hand))
 		}
 		if len(win.Melds) > 0 {
 			if c.Mode == NormalMode {
@@ -877,6 +877,32 @@ func (c *Controller) settlementTiles(ts []game.Tile) string {
 		return normalShortTiles(ts)
 	}
 	return rawTiles(ts)
+}
+
+// stealthGrouped 按花色分组显示手牌，避免不同花色字符紧凑拼接导致语义不清。
+func stealthGrouped(ts []game.Tile) string {
+	var groups [4][]game.Tile
+	for _, t := range ts {
+		b := t.Base()
+		groups[b.Suit()] = append(groups[b.Suit()], b)
+	}
+	names := []string{"万", "筒", "索", "字"}
+	parts := []string{}
+	for i, g := range groups {
+		if len(g) == 0 {
+			continue
+		}
+		game.SortTiles(g)
+		var b strings.Builder
+		for _, t := range g {
+			b.WriteString(t.String())
+		}
+		parts = append(parts, names[i]+":"+b.String())
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, "  ")
 }
 
 func indicatorSummary(c *Controller, indicators []game.Tile) string {

@@ -18,3 +18,14 @@ func TestNormalCardsAkaRed(t *testing.T) {
 		t.Fatalf("普通牌不应染红:\n%s", plain)
 	}
 }
+
+func TestStealthGroupedFormat(t *testing.T) {
+	// 五筒x2 + 红五筒(35) + 三索(20) + 五索(22) + 东x2(27)
+	got := stealthGrouped([]game.Tile{13, 13, 35, 20, 22, 27, 27})
+	t.Logf("分组输出: [%s]", got)
+	for _, want := range []string{"筒:", "索:", "字:"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("缺 %s 分组: %s", want, got)
+		}
+	}
+}
