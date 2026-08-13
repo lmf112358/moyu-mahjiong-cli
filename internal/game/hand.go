@@ -17,8 +17,8 @@ type Shape struct {
 func Counts(tiles []Tile) [34]int {
 	var c [34]int
 	for _, t := range tiles {
-		if t < 34 {
-			c[t]++
+		if b := t.Base(); b < 34 {
+			c[b]++
 		}
 	}
 	return c
@@ -113,7 +113,7 @@ func Waits(hand []Tile, melds int, players int) []Tile {
 		if players == 3 && t >= 1 && t <= 7 {
 			continue
 		}
-		if countTile(hand, t) >= 4 {
+		if countTileNorm(hand, t) >= 4 {
 			continue
 		}
 		x := append(append([]Tile(nil), hand...), t)
@@ -151,6 +151,17 @@ func countTile(ts []Tile, t Tile) int {
 	return n
 }
 
+func countTileNorm(ts []Tile, t Tile) int {
+	n := 0
+	b := t.Base()
+	for _, x := range ts {
+		if x.Base() == b {
+			n++
+		}
+	}
+	return n
+}
+
 func removeTiles(hand []Tile, wanted ...Tile) ([]Tile, bool) {
 	x := append([]Tile(nil), hand...)
 	for _, t := range wanted {
@@ -168,6 +179,27 @@ func removeTiles(hand []Tile, wanted ...Tile) ([]Tile, bool) {
 	}
 	SortTiles(x)
 	return x, true
+}
+
+func removeTilesNormList(hand []Tile, wanted []Tile) ([]Tile, []Tile, bool) {
+	x := append([]Tile(nil), hand...)
+	removed := make([]Tile, 0, len(wanted))
+	for _, wt := range wanted {
+		found := -1
+		for i, v := range x {
+			if v.Base() == wt.Base() {
+				found = i
+				break
+			}
+		}
+		if found < 0 {
+			return nil, hand, false
+		}
+		removed = append(removed, x[found])
+		x = append(x[:found], x[found+1:]...)
+	}
+	SortTiles(x)
+	return removed, x, true
 }
 
 func uniqueTiles(ts []Tile) []Tile {

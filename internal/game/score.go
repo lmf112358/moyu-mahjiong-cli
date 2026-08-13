@@ -65,6 +65,13 @@ func evaluateShape(p Player, s Shape, c WinContext) ScoreResult {
 	for _, m := range p.Melds {
 		all = append(all, m.Tiles...)
 	}
+	akaHan := 0
+	for i, t := range all {
+		if t.IsAka() {
+			akaHan++
+			all[i] = t.Base()
+		}
+	}
 	if s.Kokushi {
 		yakuman("国士无双")
 		return r
@@ -226,7 +233,7 @@ func evaluateShape(p Player, s Shape, c WinContext) ScoreResult {
 	for _, ind := range c.DoraIndicators {
 		doraHan += countTile(all, DoraFrom(ind))
 	}
-	r.Han += doraHan
+	r.Han += doraHan + akaHan
 	uraHan := 0
 	if c.Riichi {
 		for _, ind := range c.UraIndicators {
@@ -240,6 +247,10 @@ func evaluateShape(p Player, s Shape, c WinContext) ScoreResult {
 	if doraHan > 0 {
 		r.Yaku = append(r.Yaku, "宝牌 "+itoa(doraHan))
 		r.YakuItems = append(r.YakuItems, YakuItem{Name: "宝牌", Han: doraHan})
+	}
+	if akaHan > 0 {
+		r.Yaku = append(r.Yaku, "赤宝牌 "+itoa(akaHan))
+		r.YakuItems = append(r.YakuItems, YakuItem{Name: "赤宝牌", Han: akaHan})
 	}
 	if uraHan > 0 {
 		r.Yaku = append(r.Yaku, "里宝牌 "+itoa(uraHan))

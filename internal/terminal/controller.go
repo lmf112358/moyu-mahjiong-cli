@@ -27,6 +27,28 @@ type Controller struct {
 
 const ansiReset = "\033[0m"
 
+const (
+	colorDora = "\033[93m" // 表宝牌 浅黄
+	colorUra  = "\033[95m" // 里宝牌 浅紫
+	colorAka  = "\033[91m" // 红宝牌 红
+)
+
+func wallBar(wallLeft, deadLeft, players int) string {
+	initial := 70
+	if players == 3 {
+		initial = 55
+	}
+	const width = 14
+	filled := width * wallLeft / initial
+	if filled > width {
+		filled = width
+	}
+	if filled < 0 {
+		filled = 0
+	}
+	return fmt.Sprintf("[%s%s] 活%d·王%d", strings.Repeat("█", filled), strings.Repeat("░", width-filled), wallLeft, deadLeft)
+}
+
 func ParseDisplayMode(s string) DisplayMode {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "normal", "n", "2", "正常", "图形":
@@ -122,8 +144,8 @@ func (c *Controller) render(d game.Decision) {
 func (c *Controller) renderNormal(d game.Decision) {
 	v := d.View
 	fmt.Fprint(c.Out, "\033[2J\033[H")
-	fmt.Fprintf(c.Out, "摸鱼雀 [正常大牌]  %s%d局 · %d本场  余%d  宝:%s  供托:%d\n",
-		v.RoundWind.String(), v.HandNumber, v.Honba, v.WallLeft, normalShortTiles(v.Dora), v.RiichiSticks)
+	fmt.Fprintf(c.Out, "摸鱼雀 [正常大牌]  %s%d局 · %d本场  %s  宝:%s  供托:%d\n",
+		v.RoundWind.String(), v.HandNumber, v.Honba, wallBar(v.WallLeft, v.DeadLeft, len(v.Players)), colorDora+normalShortTiles(v.Dora)+ansiReset, v.RiichiSticks)
 	fmt.Fprintln(c.Out, normalActivity(v))
 	fmt.Fprintln(c.Out, "════════════════════════════════════════════════════════════════════════════════════════════════════")
 	for i, p := range v.Players {
@@ -171,7 +193,7 @@ func normalActivity(v game.View) string {
 		active = v.Players[v.Active].Name
 	}
 	recent := "尚无舍牌"
-	if v.LastDiscard < 34 && v.LastFrom >= 0 && v.LastFrom < len(v.Players) {
+	if v.LastDiscard < 37 && v.LastFrom >= 0 && v.LastFrom < len(v.Players) {
 		recent = v.Players[v.LastFrom].Name + " → " + normalTileLabel(v.LastDiscard)
 	}
 	return "当前 ▶ " + active + "    最近 " + recent
@@ -242,32 +264,38 @@ func normalCards(ts []game.Tile, perRow int, indexed, highlightLast bool) string
 			for i := start; i < end; i++ {
 				top, bottom := normalTileFace(ts[i])
 				highlight := highlightLast && i == len(ts)-1
+				aka := ts[i].IsAka()
+				var cell string
 				switch row {
 				case 0:
 					if highlight {
-						out.WriteString("╔═════╗")
+						cell = "╔═════╗"
 					} else {
-						out.WriteString("┌─────┐")
+						cell = "┌─────┐"
 					}
 				case 1:
 					if highlight {
-						out.WriteString("║" + centerDisplay(top, 5) + "║")
+						cell = "║" + centerDisplay(top, 5) + "║"
 					} else {
-						out.WriteString("│" + centerDisplay(top, 5) + "│")
+						cell = "│" + centerDisplay(top, 5) + "│"
 					}
 				case 2:
 					if highlight {
-						out.WriteString("║" + centerDisplay(bottom, 5) + "║")
+						cell = "║" + centerDisplay(bottom, 5) + "║"
 					} else {
-						out.WriteString("│" + centerDisplay(bottom, 5) + "│")
+						cell = "│" + centerDisplay(bottom, 5) + "│"
 					}
 				case 3:
 					if highlight {
-						out.WriteString("╚═════╝")
+						cell = "╚═════╝"
 					} else {
-						out.WriteString("└─────┘")
+						cell = "└─────┘"
 					}
 				}
+				if aka {
+					cell = colorAka + cell + ansiReset
+				}
+				out.WriteString(cell)
 			}
 			out.WriteByte('\n')
 		}
@@ -283,6 +311,7 @@ func normalCards(ts []game.Tile, perRow int, indexed, highlightLast bool) string
 }
 
 func normalTileFace(t game.Tile) (string, string) {
+	t = t.Base()
 	ranks := [...]string{"一", "二", "三", "四", "五", "六", "七", "八", "九"}
 	if t < 27 {
 		suit := [...]string{"萬", "筒", "索"}[t.Suit()]
@@ -312,8 +341,8 @@ func normalShortTiles(ts []game.Tile) string {
 func (c *Controller) renderStealth(d game.Decision) {
 	v := d.View
 	fmt.Fprint(c.Out, "\033[2J\033[H")
-	fmt.Fprintf(c.Out, "摸鱼雀  %s%d局 · %d本场  余%d  宝:%s  供托:%d\n",
-		v.RoundWind.String(), v.HandNumber, v.Honba, v.WallLeft, rawTiles(v.Dora), v.RiichiSticks)
+	fmt.Fprintf(c.Out, "摸鱼雀  %s%d局 · %d本场  %s  宝:%s  供托:%d\n",
+		v.RoundWind.String(), v.HandNumber, v.Honba, wallBar(v.WallLeft, v.DeadLeft, len(v.Players)), rawTiles(v.Dora), v.RiichiSticks)
 	fmt.Fprintln(c.Out, c.stealthActivity(v))
 	fmt.Fprintln(c.Out, "────────────────────────────────────────────────────────────")
 	for i, p := range v.Players {
@@ -379,7 +408,7 @@ func (c *Controller) stealthActivity(v game.View) string {
 		active = v.Players[v.Active].Name
 	}
 	recent := "尚无舍牌"
-	if v.LastDiscard < 34 && v.LastFrom >= 0 && v.LastFrom < len(v.Players) {
+	if v.LastDiscard < 37 && v.LastFrom >= 0 && v.LastFrom < len(v.Players) {
 		recent = v.Players[v.LastFrom].Name + " → " + v.LastDiscard.String()
 	}
 	return "当前 ▶ " + active + "    最近 " + recent
@@ -703,7 +732,7 @@ func (c *Controller) tableActivity(v game.View) string {
 		active = v.Players[v.Active].Name
 	}
 	recent := "暂无舍牌"
-	if v.LastDiscard < 34 && v.LastFrom >= 0 && v.LastFrom < len(v.Players) {
+	if v.LastDiscard < 37 && v.LastFrom >= 0 && v.LastFrom < len(v.Players) {
 		recent = fmt.Sprintf("最近舍牌 %s ▸ %s", v.Players[v.LastFrom].Name, c.tile(v.LastDiscard))
 	}
 	return fmt.Sprintf("\033[1;35m%s 牌桌动态  ▶ %s 正在操作  │  %s\033[0m", frames[c.frame%len(frames)], active, recent)
@@ -814,9 +843,9 @@ func (c *Controller) ShowSettlement(s game.Settlement) {
 			}
 			fmt.Fprintf(c.Out, "合计  %d翻 %d符%s  得点 +%d\n", win.Han, win.Fu, limit, win.Gain)
 		}
-		fmt.Fprintf(c.Out, "宝牌  %s\n", indicatorSummary(c, win.Dora))
+		fmt.Fprintf(c.Out, "宝牌  %s%s%s\n", colorDora, indicatorSummary(c, win.Dora), ansiReset)
 		if len(win.UraDora) > 0 {
-			fmt.Fprintf(c.Out, "里宝  %s\n", indicatorSummary(c, win.UraDora))
+			fmt.Fprintf(c.Out, "里宝  %s%s%s\n", colorUra, indicatorSummary(c, win.UraDora), ansiReset)
 		}
 		if index+1 < len(s.Wins) {
 			fmt.Fprintln(c.Out, "────────────────────────────────────────────────────────────")

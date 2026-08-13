@@ -10,6 +10,40 @@ type Tile uint8
 
 const NoTile Tile = 255
 
+const (
+	Aka5Man Tile = 34
+	Aka5Pin Tile = 35
+	Aka5Sou Tile = 36
+)
+
+func (t Tile) Base() Tile {
+	switch t {
+	case Aka5Man:
+		return 4
+	case Aka5Pin:
+		return 13
+	case Aka5Sou:
+		return 22
+	}
+	return t
+}
+
+func (t Tile) IsAka() bool {
+	return t == Aka5Man || t == Aka5Pin || t == Aka5Sou
+}
+
+func akaOf(t Tile) Tile {
+	switch t {
+	case 4:
+		return Aka5Man
+	case 13:
+		return Aka5Pin
+	case 22:
+		return Aka5Sou
+	}
+	return 0
+}
+
 var tileNames = [34]string{
 	"一", "二", "三", "四", "五", "六", "七", "八", "九",
 	"①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨",
@@ -18,6 +52,9 @@ var tileNames = [34]string{
 }
 
 func (t Tile) String() string {
+	if t.IsAka() {
+		return t.Base().String()
+	}
 	if int(t) >= len(tileNames) {
 		return "?"
 	}
@@ -25,6 +62,7 @@ func (t Tile) String() string {
 }
 
 func (t Tile) Suit() int {
+	t = t.Base()
 	if t < 9 {
 		return 0
 	}
@@ -38,17 +76,26 @@ func (t Tile) Suit() int {
 }
 
 func (t Tile) Rank() int {
+	t = t.Base()
 	if t >= 27 {
 		return int(t) - 26
 	}
 	return int(t)%9 + 1
 }
 
-func (t Tile) IsHonor() bool    { return t >= 27 }
+func (t Tile) IsHonor() bool    { t = t.Base(); return t >= 27 }
 func (t Tile) IsTerminal() bool { return !t.IsHonor() && (t.Rank() == 1 || t.Rank() == 9) }
 func (t Tile) IsYaochu() bool   { return t.IsHonor() || t.IsTerminal() }
 
-func SortTiles(ts []Tile) { sort.Slice(ts, func(i, j int) bool { return ts[i] < ts[j] }) }
+func SortTiles(ts []Tile) {
+	sort.SliceStable(ts, func(i, j int) bool {
+		bi, bj := ts[i].Base(), ts[j].Base()
+		if bi != bj {
+			return bi < bj
+		}
+		return ts[i] < ts[j]
+	})
+}
 
 func TilesString(ts []Tile) string {
 	var b strings.Builder
@@ -73,14 +120,20 @@ func FullWall(players int) []Tile {
 		if players == 3 && t >= 1 && t <= 7 {
 			continue
 		}
+		aka := akaOf(t)
 		for i := 0; i < 4; i++ {
-			wall = append(wall, t)
+			if aka != 0 && i == 3 {
+				wall = append(wall, aka)
+			} else {
+				wall = append(wall, t)
+			}
 		}
 	}
 	return wall
 }
 
 func DoraFrom(ind Tile) Tile {
+	ind = ind.Base()
 	switch {
 	case ind < 27:
 		base := ind / 9 * 9

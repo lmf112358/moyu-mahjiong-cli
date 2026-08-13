@@ -241,9 +241,15 @@ func (e *Engine) drawDecision(i int, drawn Tile) (ActionKind, Tile) {
 		opts = append(opts, Option{"自摸", Action{Kind: ActTsumo, Tile: drawn}})
 	}
 	if !p.Riichi {
+		seen := map[Tile]bool{}
 		for _, t := range uniqueTiles(p.Hand) {
-			if countTile(p.Hand, t) == 4 {
-				opts = append(opts, Option{"暗杠 " + t.String(), Action{Kind: ActKan, Tile: t}})
+			b := t.Base()
+			if seen[b] {
+				continue
+			}
+			seen[b] = true
+			if countTileNorm(p.Hand, t) == 4 {
+				opts = append(opts, Option{"暗杠 " + b.String(), Action{Kind: ActKan, Tile: b}})
 			}
 		}
 		if e.Config.Players == 3 && countTile(p.Hand, 30) > 0 {
@@ -328,10 +334,10 @@ func (e *Engine) reactions(from int, t Tile) ([]int, int, MeldKind, []Tile) {
 			continue
 		}
 		opts := []Option{}
-		if countTile(p.Hand, t) >= 3 {
+		if countTileNorm(p.Hand, t) >= 3 {
 			opts = append(opts, Option{"大明杠", Action{Kind: ActKan, Tile: t, Tiles: []Tile{t, t, t}}})
 		}
-		if countTile(p.Hand, t) >= 2 {
+		if countTileNorm(p.Hand, t) >= 2 {
 			opts = append(opts, Option{"碰", Action{Kind: ActPon, Tile: t, Tiles: []Tile{t, t}}})
 		}
 		if len(opts) > 0 {
@@ -384,12 +390,12 @@ func (e *Engine) discard(i int, t Tile) {
 }
 func (e *Engine) call(i, from int, k MeldKind, t Tile, used []Tile) {
 	p := &e.Players[i]
-	var ok bool
-	p.Hand, ok = removeTiles(p.Hand, used...)
+	removed, newHand, ok := removeTilesNormList(p.Hand, used)
 	if !ok {
 		return
 	}
-	tiles := append(append([]Tile(nil), used...), t)
+	p.Hand = newHand
+	tiles := append(append([]Tile(nil), removed...), t)
 	SortTiles(tiles)
 	p.Melds = append(p.Melds, Meld{Kind: k, Tiles: tiles, From: from})
 	if len(e.Players[from].River) > 0 {
@@ -406,8 +412,13 @@ func (e *Engine) call(i, from int, k MeldKind, t Tile, used []Tile) {
 }
 func (e *Engine) doAnkan(i int, t Tile) {
 	p := &e.Players[i]
-	p.Hand, _ = removeTiles(p.Hand, t, t, t, t)
-	p.Melds = append(p.Melds, Meld{Kind: Ankan, Tiles: []Tile{t, t, t, t}, From: i})
+	removed, newHand, ok := removeTilesNormList(p.Hand, []Tile{t, t, t, t})
+	if !ok {
+		return
+	}
+	p.Hand = newHand
+	SortTiles(removed)
+	p.Melds = append(p.Melds, Meld{Kind: Ankan, Tiles: removed, From: i})
 	e.doraCount++
 	for j := range e.Players {
 		e.Players[j].Ippatsu = false
@@ -602,7 +613,7 @@ func (e *Engine) viewFor(i int) View {
 			ps[j].Hand = make([]Tile, len(p.Hand))
 		}
 	}
-	return View{Players: ps, You: i, Turn: e.turn, Dealer: e.dealer, RoundWind: e.roundWind, HandNumber: e.handNumber%e.Config.Players + 1, Honba: e.honba, RiichiSticks: e.sticks, WallLeft: e.liveLeft(), Dora: e.doraIndicators(), Message: e.message, LastDiscard: e.lastDiscard, LastFrom: e.lastFrom}
+	return View{Players: ps, You: i, Turn: e.turn, Dealer: e.dealer, RoundWind: e.roundWind, HandNumber: e.handNumber%e.Config.Players + 1, Honba: e.honba, RiichiSticks: e.sticks, WallLeft: e.liveLeft(), DeadLeft: 14 - e.rinshanPos, Dora: e.doraIndicators(), Message: e.message, LastDiscard: e.lastDiscard, LastFrom: e.lastFrom}
 }
 func (e *Engine) say(s string) { e.message = s; e.log = append(e.log, s) }
 
@@ -636,6 +647,7 @@ func sameAction(a, b Action) bool {
 }
 func chiCombos(hand []Tile, t Tile) [][]Tile {
 	var out [][]Tile
+	t = t.Base()
 	if t.IsHonor() {
 		return out
 	}
@@ -645,7 +657,7 @@ func chiCombos(hand []Tile, t Tile) [][]Tile {
 	for _, c := range cands {
 		if c[0] >= 1 && c[1] <= 9 {
 			a, b := Tile(base+c[0]-1), Tile(base+c[1]-1)
-			if countTile(hand, a) > 0 && countTile(hand, b) > 0 {
+			if countTileNorm(hand, a) > 0 && countTileNorm(hand, b) > 0 {
 				out = append(out, []Tile{a, b})
 			}
 		}

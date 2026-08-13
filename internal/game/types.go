@@ -65,6 +65,7 @@ type View struct {
 	Honba        int      `json:"honba"`
 	RiichiSticks int      `json:"riichiSticks"`
 	WallLeft     int      `json:"wallLeft"`
+	DeadLeft     int      `json:"deadLeft"`
 	Dora         []Tile   `json:"dora"`
 	Message      string   `json:"message"`
 	LastDiscard  Tile     `json:"lastDiscard"`
