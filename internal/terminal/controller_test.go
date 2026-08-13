@@ -131,7 +131,7 @@ func TestStealthRenderIsCompactAndColorless(t *testing.T) {
 	if strings.Contains(withoutClear, "\033[") {
 		t.Fatalf("stealth render contains ANSI styling: %q", withoutClear)
 	}
-	for _, want := range []string{"摸鱼雀  東1局", "当前 ▶ 我", "庄", "河│", ">白", "副 碰:中中中", "牌│一 │ ① │ 1 │", "键│01 │02 │03 │", "动作  [A] 拔北", "输入牌下方数字出牌"} {
+	for _, want := range []string{"摸鱼雀  東1局", "当前 ▶ 我", "庄", "河│", ">白", "副 碰:中中中", "牌│一 │① │ 1 │", "键│01 │02 │03 │", "动作  [A] 拔北", "输入牌下方数字出牌"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %q\n%s", want, s)
 		}
@@ -189,7 +189,7 @@ func TestStealthHandColumnsUseDisplayWidth(t *testing.T) {
 	if displayWidth(lines[0]) != displayWidth(lines[1]) {
 		t.Fatalf("visual widths differ: tiles=%d keys=%d\n%s", displayWidth(lines[0]), displayWidth(lines[1]), got)
 	}
-	if displayWidth("九") != 2 || displayWidth("①") != 1 || displayWidth("1") != 1 {
+	if displayWidth("九") != 2 || displayWidth("①") != 2 || displayWidth("1") != 1 {
 		t.Fatalf("unexpected terminal widths")
 	}
 }

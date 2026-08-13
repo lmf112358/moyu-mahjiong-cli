@@ -468,7 +468,7 @@ func isCombining(r rune) bool {
 
 func isWide(r rune) bool {
 	return r >= 0x1100 && (r <= 0x115f || r == 0x2329 || r == 0x232a ||
-		r >= 0x2e80 && r <= 0xa4cf && r != 0x303f ||
+		r >= 0x2460 && r <= 0x24ff || r >= 0x2e80 && r <= 0xa4cf && r != 0x303f ||
 		r >= 0xac00 && r <= 0xd7a3 || r >= 0xf900 && r <= 0xfaff ||
 		r >= 0xfe10 && r <= 0xfe19 || r >= 0xfe30 && r <= 0xfe6f ||
 		r >= 0xff00 && r <= 0xff60 || r >= 0xffe0 && r <= 0xffe6 ||
@@ -679,9 +679,9 @@ func (c *Controller) largeTiles(ts []game.Tile, highlightLast, indexed bool) str
 				switch row {
 				case 0:
 					if highlight {
-						out.WriteString("╔═══╗")
+						out.WriteString("╔════╗")
 					} else {
-						out.WriteString("┌───┐")
+						out.WriteString("┌────┐")
 					}
 				case 1:
 					if highlight {
@@ -691,9 +691,9 @@ func (c *Controller) largeTiles(ts []game.Tile, highlightLast, indexed bool) str
 					}
 				case 2:
 					if highlight {
-						out.WriteString("╚═══╝")
+						out.WriteString("╚════╝")
 					} else {
-						out.WriteString("└───┘")
+						out.WriteString("└────┘")
 					}
 				}
 			}
