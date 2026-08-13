@@ -14,7 +14,7 @@ import (
 	"github.com/lmf112358/moyu-mahjiong-cli/internal/terminal"
 )
 
-const version = "0.8.0"
+const version = "0.8.1"
 
 func main() {
 	fmt.Println(`  __  __  ___  __   __ _   _       _ ___   _   _   _  ___ `)
@@ -100,7 +100,7 @@ func runLocal(players int, name string, rounds int, display terminal.DisplayMode
 func host(args []string, preset terminal.DisplayMode) {
 	fs := flag.NewFlagSet("host", flag.ExitOnError)
 	players := fs.Int("players", 4, "总玩家数：3 或 4")
-	humans := fs.Int("humans", 2, "真人数（含房主）")
+	humans := fs.Int("humans", 2, "真人总数（含房主，其余为AI）")
 	port := fs.Int("port", 18888, "监听端口")
 	name := fs.String("name", "房主", "昵称")
 	rounds := fs.Int("rounds", 1, "1=东风战，2=半庄")
@@ -110,7 +110,7 @@ func host(args []string, preset terminal.DisplayMode) {
 	if args == nil {
 		r := bufio.NewReader(os.Stdin)
 		*players = askInt(r, "玩家数（3/4）", 4)
-		*humans = askInt(r, "真人数（其余为AI）", 2)
+		*humans = askInt(r, "真人总数（含房主，其余为AI）", 2)
 		*port = askInt(r, "端口", 18888)
 		*name = ask(r, "昵称", "房主")
 		if mode == "" {
@@ -125,8 +125,8 @@ func host(args []string, preset terminal.DisplayMode) {
 		}
 	}
 	mustPlayers(*players)
-	if *humans < 1 || *humans > *players {
-		fatal("真人数必须在 1 到玩家总数之间")
+	if *humans < 2 || *humans > *players {
+		fatal("联机至少需要 2 位真人（含房主）；只想和 AI 对战请用 play")
 	}
 	fmt.Printf("房间已监听 0.0.0.0:%d，等待 %d 位同事加入……\n", *port, *humans-1)
 	ln, peers, err := netplay.Listen(fmt.Sprintf(":%d", *port), *humans-1, func(i int, n string) { fmt.Printf("✓ %s 已加入（%d/%d）\n", n, i+1, *humans) })
@@ -172,6 +172,12 @@ func join(args []string, preset terminal.DisplayMode) {
 			mode = chooseDisplay(bufio.NewReader(os.Stdin))
 		} else {
 			mode = terminal.ParseDisplayMode(*display)
+		}
+	}
+	if args != nil {
+		host := strings.SplitN(*addr, ":", 2)[0]
+		if host == "127.0.0.1" || host == "localhost" || host == "::1" {
+			fmt.Println("提示：连接的是本机地址。若房主在别的电脑，请用 --addr 房主IP:端口")
 		}
 	}
 	fmt.Println("正在连接", *addr, "……")

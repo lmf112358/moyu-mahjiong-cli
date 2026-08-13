@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/lmf112358/moyu-mahjiong-cli/internal/game"
 )
@@ -30,6 +31,9 @@ type Peer struct {
 }
 
 func Listen(addr string, want int, onJoin func(int, string)) (net.Listener, []*Peer, error) {
+	if want <= 0 {
+		return nil, nil, errors.New("联机至少需要 2 位真人（含房主）")
+	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, nil, err
@@ -87,7 +91,7 @@ func (p *Peer) ShowSettlement(s game.Settlement) {
 }
 
 func Join(addr, name string, controller game.Controller) (game.MatchResult, error) {
-	conn, err := net.Dial("tcp", addr)
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		return game.MatchResult{}, err
 	}
@@ -105,6 +109,7 @@ func Join(addr, name string, controller game.Controller) (game.MatchResult, erro
 		switch m.Type {
 		case "welcome":
 			fmt.Println(m.Text)
+			fmt.Println("等待房主开始游戏…（人数没齐时会一直等，可随时 Ctrl+C 退出）")
 		case "decision":
 			if m.Decision == nil {
 				continue
