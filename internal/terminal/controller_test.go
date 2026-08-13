@@ -9,12 +9,11 @@ import (
 	"github.com/lmf112358/moyu-mahjiong-cli/internal/game"
 )
 
-func TestNormalTileGlyphs(t *testing.T) {
-	c := &Controller{Mode: NormalMode}
-	want := map[game.Tile]string{0: "🀇", 8: "🀏", 9: "🀙", 18: "🀐", 27: "🀀", 31: "🀆", 32: "🀅", 33: "🀄"}
+func TestNormalTileLabels(t *testing.T) {
+	want := map[game.Tile]string{0: "一萬", 8: "九萬", 9: "一筒", 18: "一索", 27: "東風", 31: "白板", 32: "發財", 33: "紅中"}
 	seen := map[string]bool{}
 	for tile := game.Tile(0); tile < 34; tile++ {
-		got := c.tile(tile)
+		got := normalTileLabel(tile)
 		if seen[got] {
 			t.Fatalf("duplicate glyph %q", got)
 		}
@@ -41,6 +40,25 @@ func TestSettlementRenderIncludesScoring(t *testing.T) {
 	}
 }
 
+func TestNormalSettlementUsesLargeCards(t *testing.T) {
+	var out bytes.Buffer
+	c := &Controller{Out: &out, In: bufio.NewReader(strings.NewReader("\n")), Mode: NormalMode}
+	c.ShowSettlement(game.Settlement{RoundWind: 27, HandNumber: 1, Wins: []game.WinDetail{{
+		WinnerName: "甲", Tsumo: true, WinTile: 9, Structure: "面子手",
+		Hand: []game.Tile{0, 1, 2, 9}, Melds: []game.Meld{{Kind: game.Chi, Tiles: []game.Tile{18, 19, 20}}},
+		Yaku: []game.YakuItem{{Name: "门前清自摸和", Han: 1}}, Han: 1, Fu: 30, Gain: 1000,
+	}}})
+	s := out.String()
+	for _, want := range []string{"東風1局", "和了牌 一筒", "│ 一  │", "│ 萬  │", "副露·吃", "│ 索  │"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("normal settlement missing %q\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "🀇") || strings.Contains(s, "🀐") {
+		t.Fatalf("normal settlement fell back to tiny Unicode Mahjong glyphs:\n%s", s)
+	}
+}
+
 func TestRenderShowsEveryRiverAndMeld(t *testing.T) {
 	var out bytes.Buffer
 	c := &Controller{Out: &out, Mode: NormalMode}
@@ -51,16 +69,19 @@ func TestRenderShowsEveryRiverAndMeld(t *testing.T) {
 			{Name: "丙", River: []game.Tile{31}},
 		},
 		You: 0, Dealer: 0, RoundWind: 27, Dora: []game.Tile{8},
-	}, Prompt: "请选择操作", Options: []game.Option{{Label: "打 一", Action: game.Action{Kind: game.ActDiscard, Tile: 0}}}}
+	}, Prompt: "请选择操作", Options: []game.Option{{Label: "打 一", Action: game.Action{Kind: game.ActDiscard, Tile: 0, Index: 0}}}}
 	c.render(d)
 	s := out.String()
-	for _, expected := range []string{"🀇", "🀙", "🀐", "│ 🀀 │", "│ 🀐 │", "│ 🀑 │", "│ 🀒 │", "🀆", "〔01〕"} {
+	for _, expected := range []string{"[正常大牌]", "│ 一  │", "│ 筒  │", "│ 索  │", "│ 東  │", "│ 白  │", "副露·碰", "副露·吃", "[01]", "输入牌块下方数字出牌"} {
 		if !strings.Contains(s, expected) {
 			t.Errorf("render missing %q\n%s", expected, s)
 		}
 	}
-	if strings.Count(s, "舍牌：") != 3 {
+	if strings.Count(s, "    河\n") != 3 {
 		t.Fatalf("expected all three rivers, output=%s", s)
+	}
+	if strings.Contains(s, "打 一") || strings.Contains(s, "请选择操作") {
+		t.Fatalf("duplicate discard options remain:\n%s", s)
 	}
 }
 
@@ -126,11 +147,29 @@ func TestStealthInputSeparatesHandKeysAndActions(t *testing.T) {
 		{Label: "打 一", Action: game.Action{Kind: game.ActDiscard, Tile: 0, Index: 0}},
 		{Label: "打 ①", Action: game.Action{Kind: game.ActDiscard, Tile: 9, Index: 1}},
 	}}
-	if got, ok := stealthInput(d, "1"); !ok || got.Kind != game.ActDiscard || got.Tile != 0 {
+	if got, ok := slotInput(d, "1"); !ok || got.Kind != game.ActDiscard || got.Tile != 0 {
 		t.Fatalf("hand key 1=%+v ok=%v", got, ok)
 	}
-	if got, ok := stealthInput(d, "A"); !ok || got.Kind != game.ActKita {
+	if got, ok := slotInput(d, "A"); !ok || got.Kind != game.ActKita {
 		t.Fatalf("action A=%+v ok=%v", got, ok)
+	}
+}
+
+func TestNormalCardsAreLargeAndAligned(t *testing.T) {
+	got := normalCards([]game.Tile{0, 9, 18, 27, 31, 33}, 6, true, false)
+	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("normal card rows=%d\n%s", len(lines), got)
+	}
+	for i := 1; i < len(lines); i++ {
+		if displayWidth(lines[i]) != displayWidth(lines[0]) {
+			t.Fatalf("row %d width=%d want %d\n%s", i, displayWidth(lines[i]), displayWidth(lines[0]), got)
+		}
+	}
+	for _, want := range []string{"│ 一  │", "│ 萬  │", "│ 東  │", "│ 風  │", "[06]"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q\n%s", want, got)
+		}
 	}
 }
 

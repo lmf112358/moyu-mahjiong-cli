@@ -55,42 +55,26 @@ func (c *Controller) Decide(d game.Decision) game.Action {
 			return game.Action{Kind: game.ActQuit}
 		}
 		if command == "h" || command == "help" {
-			if c.Mode == StealthMode {
-				fmt.Fprintln(c.Out, "输入手牌下方数字出牌；特殊动作输入字母；q 退出。")
-			} else {
-				fmt.Fprintln(c.Out, "输入选项编号确认；q 退出。立直后会自动摸切。")
-			}
+			fmt.Fprintln(c.Out, "输入手牌下方数字出牌；特殊动作输入大写字母；a 自动出牌；q 退出。")
 			continue
 		}
-		if c.Mode == StealthMode {
-			if action, ok := stealthInput(d, line); ok {
-				return action
-			}
-			fmt.Fprint(c.Out, "请输入手牌数字或动作字母。")
-			continue
-		}
-		line = command
-		if line == "a" {
+		if command == "a" {
 			for _, o := range d.Options {
 				if o.Action.Kind == game.ActDiscard {
 					return o.Action
 				}
 			}
 		}
-		n, err := strconv.Atoi(line)
-		if err == nil && n >= 1 && n <= len(d.Options) {
-			return d.Options[n-1].Action
+		if action, ok := slotInput(d, line); ok {
+			return action
 		}
-		fmt.Fprintf(c.Out, "请输入 1-%d。", len(d.Options))
+		fmt.Fprint(c.Out, "请输入手牌数字或动作大写字母。")
 	}
 }
 
-func stealthInput(d game.Decision, input string) (game.Action, bool) {
+func slotInput(d game.Decision, input string) (game.Action, bool) {
 	if len(input) == 1 {
 		ch := input[0]
-		if ch >= 'a' && ch <= 'z' {
-			ch -= 'a' - 'A'
-		}
 		if ch >= 'A' && ch <= 'Z' {
 			special := specialOptions(d.Options)
 			if i := int(ch - 'A'); i < len(special) {
@@ -132,60 +116,197 @@ func (c *Controller) render(d game.Decision) {
 		c.renderStealth(d)
 		return
 	}
+	c.renderNormal(d)
+}
+
+func (c *Controller) renderNormal(d game.Decision) {
 	v := d.View
-	c.frame++
 	fmt.Fprint(c.Out, "\033[2J\033[H")
-	fmt.Fprintf(c.Out, "\033[1;36m 摸鱼雀 CLI \033[0m  %s%d局  %d本场  供托%d  余牌%d  [%s]\n", c.tile(v.RoundWind), v.HandNumber, v.Honba, v.RiichiSticks, v.WallLeft, c.modeName())
-	fmt.Fprintln(c.Out, c.tableActivity(v))
-	fmt.Fprintf(c.Out, "宝牌指示：%s    %s\n\n", c.tiles(v.Dora), c.message(v.Message))
+	fmt.Fprintf(c.Out, "摸鱼雀 [正常大牌]  %s%d局 · %d本场  余%d  宝:%s  供托:%d\n",
+		v.RoundWind.String(), v.HandNumber, v.Honba, v.WallLeft, normalShortTiles(v.Dora), v.RiichiSticks)
+	fmt.Fprintln(c.Out, normalActivity(v))
+	fmt.Fprintln(c.Out, "════════════════════════════════════════════════════════════════════════════════════════════════════")
 	for i, p := range v.Players {
-		mark := "  "
+		marker := "  "
 		if i == v.Active {
-			mark = "▶ "
+			marker = "▶ "
 		} else if i == v.You {
-			mark = "● "
+			marker = "● "
 		}
-		wind := c.tile(game.Tile(27 + (i-v.Dealer+len(v.Players))%len(v.Players)))
-		fmt.Fprintf(c.Out, "%s%s %-10s %6d点", mark, wind, p.Name, p.Score)
+		wind := game.Tile(27 + (i-v.Dealer+len(v.Players))%len(v.Players)).String()
+		var state []string
+		if i == v.Dealer {
+			state = append(state, "庄")
+		}
 		if p.Riichi {
-			fmt.Fprint(c.Out, "  \033[33m立直\033[0m")
+			state = append(state, "立直")
 		}
 		if p.Kita > 0 {
-			fmt.Fprintf(c.Out, "  拔北×%d", p.Kita)
+			state = append(state, fmt.Sprintf("北×%d", p.Kita))
 		}
-		fmt.Fprintln(c.Out)
-		last := i == v.LastFrom && v.LastDiscard < 34 && len(p.River) > 0
-		if c.Mode == NormalMode {
-			fmt.Fprintln(c.Out, "   舍牌：")
-			fmt.Fprint(c.Out, c.largeTiles(p.River, last, false))
-		} else {
-			fmt.Fprintf(c.Out, "   舍牌：%s\n", c.stealthRiver(p.River, last))
-		}
-		if len(p.Melds) > 0 {
-			if c.Mode == NormalMode {
-				for _, m := range p.Melds {
-					fmt.Fprintf(c.Out, "   副露·%s：\n", m.Kind)
-					fmt.Fprint(c.Out, c.largeTiles(m.Tiles, false, false))
-				}
-			} else {
-				fmt.Fprint(c.Out, "   副露：")
-				for _, m := range p.Melds {
-					fmt.Fprintf(c.Out, "[%s %s] ", m.Kind, c.tiles(m.Tiles))
-				}
-				fmt.Fprintln(c.Out)
-			}
+		fmt.Fprintf(c.Out, "%s%s %s %6d  %s\n", marker, wind, padDisplayRight(p.Name, 12), p.Score, strings.Join(state, " "))
+		fmt.Fprintln(c.Out, "    河")
+		fmt.Fprint(c.Out, normalCards(p.River, 6, false, i == v.LastFrom))
+		for _, m := range p.Melds {
+			fmt.Fprintf(c.Out, "    副露·%s\n", m.Kind)
+			fmt.Fprint(c.Out, normalCards(m.Tiles, 6, false, false))
 		}
 	}
-	p := v.Players[v.You]
-	fmt.Fprintf(c.Out, "\n\033[1;32m你的手牌\033[0m：\n%s\n", c.indexedTiles(p.Hand))
-	fmt.Fprintf(c.Out, "\n%s\n", c.prompt(d))
-	for i, o := range d.Options {
-		fmt.Fprintf(c.Out, "〔%02d〕%s", i+1, c.option(o))
-		if (i+1)%5 == 0 {
-			fmt.Fprintln(c.Out)
-		}
+	fmt.Fprintln(c.Out, "════════════════════════════════════════════════════════════════════════════════════════════════════")
+	fmt.Fprintln(c.Out, "你的手牌")
+	fmt.Fprintln(c.Out, normalCards(v.Players[v.You].Hand, 14, true, false))
+	if v.HasDrawn && v.DrawnIndex >= 0 && v.DrawnIndex < len(v.Players[v.You].Hand) {
+		fmt.Fprintf(c.Out, "摸入 [%02d] %s\n", v.DrawnIndex+1, normalTileLabel(v.Players[v.You].Hand[v.DrawnIndex]))
+	}
+	if status := stealthReadyStatus(d); status != "" {
+		fmt.Fprintln(c.Out, status)
 	}
 	fmt.Fprintln(c.Out)
+	renderNormalOptions(c.Out, d)
+}
+
+func normalActivity(v game.View) string {
+	active := "等待"
+	if v.Active >= 0 && v.Active < len(v.Players) {
+		active = v.Players[v.Active].Name
+	}
+	recent := "尚无舍牌"
+	if v.LastDiscard < 34 && v.LastFrom >= 0 && v.LastFrom < len(v.Players) {
+		recent = v.Players[v.LastFrom].Name + " → " + normalTileLabel(v.LastDiscard)
+	}
+	return "当前 ▶ " + active + "    最近 " + recent
+}
+
+func renderNormalOptions(w io.Writer, d game.Decision) {
+	special := specialOptions(d.Options)
+	if len(special) > 0 {
+		fmt.Fprint(w, "动作  ")
+		for i, o := range special {
+			fmt.Fprintf(w, "[%c] %s   ", 'A'+i, normalOption(o))
+		}
+		fmt.Fprintln(w)
+	}
+	hasDiscard := false
+	for _, o := range d.Options {
+		if o.Action.Kind == game.ActDiscard {
+			hasDiscard = true
+			break
+		}
+	}
+	if hasDiscard {
+		fmt.Fprintln(w, "输入牌块下方数字出牌")
+	} else if len(special) == 0 {
+		fmt.Fprintln(w, d.Prompt)
+	}
+}
+
+func normalOption(o game.Option) string {
+	a := o.Action
+	switch a.Kind {
+	case game.ActRiichi:
+		return "立直·" + normalTileLabel(a.Tile)
+	case game.ActKita:
+		return "拔北"
+	case game.ActChi:
+		return "吃·" + normalShortTiles(append(append([]game.Tile(nil), a.Tiles...), a.Tile))
+	case game.ActPon:
+		return "碰·" + normalTileLabel(a.Tile)
+	case game.ActKan:
+		return "杠·" + normalTileLabel(a.Tile)
+	case game.ActTsumo:
+		return "自摸"
+	case game.ActRon:
+		return "荣和"
+	case game.ActPass:
+		return "跳过"
+	default:
+		return o.Label
+	}
+}
+
+func normalCards(ts []game.Tile, perRow int, indexed, highlightLast bool) string {
+	if len(ts) == 0 {
+		return "      -\n"
+	}
+	if perRow <= 0 {
+		perRow = len(ts)
+	}
+	var out strings.Builder
+	for start := 0; start < len(ts); start += perRow {
+		end := start + perRow
+		if end > len(ts) {
+			end = len(ts)
+		}
+		for row := 0; row < 4; row++ {
+			out.WriteString("      ")
+			for i := start; i < end; i++ {
+				top, bottom := normalTileFace(ts[i])
+				highlight := highlightLast && i == len(ts)-1
+				switch row {
+				case 0:
+					if highlight {
+						out.WriteString("╔═════╗")
+					} else {
+						out.WriteString("┌─────┐")
+					}
+				case 1:
+					if highlight {
+						out.WriteString("║" + centerDisplay(top, 5) + "║")
+					} else {
+						out.WriteString("│" + centerDisplay(top, 5) + "│")
+					}
+				case 2:
+					if highlight {
+						out.WriteString("║" + centerDisplay(bottom, 5) + "║")
+					} else {
+						out.WriteString("│" + centerDisplay(bottom, 5) + "│")
+					}
+				case 3:
+					if highlight {
+						out.WriteString("╚═════╝")
+					} else {
+						out.WriteString("└─────┘")
+					}
+				}
+			}
+			out.WriteByte('\n')
+		}
+		if indexed {
+			out.WriteString("      ")
+			for i := start; i < end; i++ {
+				out.WriteString(centerDisplay(fmt.Sprintf("[%02d]", i+1), 7))
+			}
+			out.WriteByte('\n')
+		}
+	}
+	return out.String()
+}
+
+func normalTileFace(t game.Tile) (string, string) {
+	ranks := [...]string{"一", "二", "三", "四", "五", "六", "七", "八", "九"}
+	if t < 27 {
+		suit := [...]string{"萬", "筒", "索"}[t.Suit()]
+		return ranks[t.Rank()-1], suit
+	}
+	tops := [...]string{"東", "南", "西", "北", "白", "發", "紅"}
+	bottoms := [...]string{"風", "風", "風", "風", "板", "財", "中"}
+	return tops[t-27], bottoms[t-27]
+}
+
+func normalTileLabel(t game.Tile) string {
+	top, bottom := normalTileFace(t)
+	return top + bottom
+}
+
+func normalShortTiles(ts []game.Tile) string {
+	if len(ts) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(ts))
+	for i, t := range ts {
+		parts[i] = normalTileLabel(t)
+	}
+	return strings.Join(parts, " ")
 }
 
 func (c *Controller) renderStealth(d game.Decision) {
@@ -658,16 +779,23 @@ func (c *Controller) ShowSettlement(s game.Settlement) {
 		fmt.Fprintf(c.Out, "结构  %s\n", win.Structure)
 		if c.Mode == NormalMode {
 			fmt.Fprintln(c.Out, "手牌")
-			fmt.Fprintln(c.Out, c.largeTiles(win.Hand, false, false))
+			fmt.Fprint(c.Out, normalCards(win.Hand, 14, false, false))
 		} else {
 			fmt.Fprintf(c.Out, "手牌  %s\n", c.settlementTiles(win.Hand))
 		}
 		if len(win.Melds) > 0 {
-			fmt.Fprint(c.Out, "副露  ")
-			for _, m := range win.Melds {
-				fmt.Fprintf(c.Out, "[%s %s] ", m.Kind, c.settlementTiles(m.Tiles))
+			if c.Mode == NormalMode {
+				for _, m := range win.Melds {
+					fmt.Fprintf(c.Out, "副露·%s\n", m.Kind)
+					fmt.Fprint(c.Out, normalCards(m.Tiles, 6, false, false))
+				}
+			} else {
+				fmt.Fprint(c.Out, "副露  ")
+				for _, m := range win.Melds {
+					fmt.Fprintf(c.Out, "[%s %s] ", m.Kind, c.settlementTiles(m.Tiles))
+				}
+				fmt.Fprintln(c.Out)
 			}
-			fmt.Fprintln(c.Out)
 		}
 		fmt.Fprintln(c.Out, "役种")
 		for _, y := range win.Yaku {
@@ -710,14 +838,14 @@ func (c *Controller) ShowSettlement(s game.Settlement) {
 
 func (c *Controller) settlementTile(t game.Tile) string {
 	if c.Mode == NormalMode {
-		return c.tile(t)
+		return normalTileLabel(t)
 	}
 	return t.String()
 }
 
 func (c *Controller) settlementTiles(ts []game.Tile) string {
 	if c.Mode == NormalMode {
-		return c.tiles(ts)
+		return normalShortTiles(ts)
 	}
 	return rawTiles(ts)
 }

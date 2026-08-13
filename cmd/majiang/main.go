@@ -14,7 +14,7 @@ import (
 	"github.com/lmf112358/moyu-mahjiong-cli/internal/terminal"
 )
 
-const version = "0.7.0"
+const version = "0.8.0"
 
 func main() {
 	fmt.Println(`  __  __  ___  __   __ _   _       _ ___   _   _   _  ___ `)
@@ -206,7 +206,7 @@ func askInt(r *bufio.Reader, p string, def int) int {
 func chooseDisplay(r *bufio.Reader) terminal.DisplayMode {
 	fmt.Println("请选择麻将显示模式：")
 	fmt.Println("  1) 隐匿模式：一/1/① 分别表示万/条/筒")
-	fmt.Println("  2) 正常模式：使用 🀇 🀐 🀙 麻将图形")
+	fmt.Println("  2) 正常模式：使用放大的数字/花色牌块")
 	fmt.Print("显示模式 [1] > ")
 	s, _ := r.ReadString('\n')
 	return terminal.ParseDisplayMode(s)
