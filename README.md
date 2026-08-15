@@ -18,7 +18,7 @@
 
 ## 下载与运行
 
-Windows 用户可从 [Releases](https://github.com/lmf112358/moyu-mahjiong-cli/releases) 下载 `moyu-majiang-windows-amd64.exe`，在 PowerShell 或 Windows Terminal 中运行：
+Windows 用户可从 [Releases](https://github.com/LimitlessMindForce/moyu-mahjiong-cli/releases) 下载 `moyu-majiang-windows-amd64.exe`，在 PowerShell 或 Windows Terminal 中运行：
 
 ```powershell
 .\moyu-majiang-windows-amd64.exe

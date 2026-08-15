@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lmf112358/moyu-mahjiong-cli/internal/game"
+	"github.com/LimitlessMindForce/moyu-mahjiong-cli/internal/game"
 )
 
 func TestNormalTileLabels(t *testing.T) {
@@ -131,7 +131,7 @@ func TestStealthRenderIsCompactAndColorless(t *testing.T) {
 	if strings.Contains(withoutClear, "\033[") {
 		t.Fatalf("stealth render contains ANSI styling: %q", withoutClear)
 	}
-	for _, want := range []string{"摸鱼雀  東1局", "当前 ▶ 我", "庄", "河│", ">白", "副 碰:中中中", "牌│一 │① │ 1 │", "键│01 │02 │03 │", "动作  [A] 拔北", "输入牌下方数字出牌"} {
+	for _, want := range []string{"摸鱼雀  東1局", "当前 ▶ 我", "庄", "河│", ">白", "副 碰:中中中", "牌│一 │ ① │ 1 │", "键│01 │02 │03 │", "动作  [A] 拔北", "输入牌下方数字出牌"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %q\n%s", want, s)
 		}
@@ -152,6 +152,61 @@ func TestStealthInputSeparatesHandKeysAndActions(t *testing.T) {
 	}
 	if got, ok := slotInput(d, "A"); !ok || got.Kind != game.ActKita {
 		t.Fatalf("action A=%+v ok=%v", got, ok)
+	}
+}
+
+func TestDecideUppercaseActionDoesNotTriggerLowercaseAutoDiscard(t *testing.T) {
+	d := game.Decision{
+		View: game.View{Players: []game.Player{{Name: "我", Hand: []game.Tile{0, 1}}}, You: 0},
+		Options: []game.Option{
+			{Label: "立直并打 二", Action: game.Action{Kind: game.ActRiichi, Tile: 1, Index: 1}},
+			{Label: "打一", Action: game.Action{Kind: game.ActDiscard, Tile: 0, Index: 0}},
+		},
+	}
+	var out bytes.Buffer
+	c := &Controller{In: bufio.NewReader(strings.NewReader("A\n")), Out: &out, Mode: StealthMode}
+	got := c.Decide(d)
+	if got.Kind != game.ActRiichi || got.Tile != 1 || got.Index != 1 {
+		t.Fatalf("uppercase A=%+v, want riichi discard at index 1", got)
+	}
+}
+
+func TestDecideUppercaseHRemainsAvailableAsAction(t *testing.T) {
+	options := make([]game.Option, 8)
+	for i := range options {
+		options[i] = game.Option{
+			Label:  "立直",
+			Action: game.Action{Kind: game.ActRiichi, Tile: game.Tile(i), Index: i},
+		}
+	}
+	d := game.Decision{
+		View:    game.View{Players: []game.Player{{Name: "我"}}, You: 0},
+		Options: options,
+	}
+	var out bytes.Buffer
+	c := &Controller{In: bufio.NewReader(strings.NewReader("H\n")), Out: &out, Mode: StealthMode}
+	got := c.Decide(d)
+	if got.Kind != game.ActRiichi || got.Index != 7 {
+		t.Fatalf("uppercase H=%+v, want eighth special action", got)
+	}
+}
+
+func TestDecideRejectsHandIndexWhenOnlyCallActionsAreAvailable(t *testing.T) {
+	d := game.Decision{
+		View: game.View{Players: []game.Player{{Name: "我", Hand: []game.Tile{0, 1, 2, 3, 4}}}, You: 0},
+		Options: []game.Option{
+			{Label: "碰", Action: game.Action{Kind: game.ActPon, Tile: 0, Tiles: []game.Tile{0, 0}}},
+			{Label: "跳过", Action: game.Action{Kind: game.ActPass}},
+		},
+	}
+	var out bytes.Buffer
+	c := &Controller{In: bufio.NewReader(strings.NewReader("01\n05\nB\n")), Out: &out, Mode: StealthMode}
+	got := c.Decide(d)
+	if got.Kind != game.ActPass {
+		t.Fatalf("numeric hand indices selected %+v, want pass from uppercase B", got)
+	}
+	if strings.Count(out.String(), "请输入手牌数字或动作大写字母。") != 2 {
+		t.Fatalf("both numeric inputs should be rejected, output:\n%s", out.String())
 	}
 }
 
@@ -189,7 +244,10 @@ func TestStealthHandColumnsUseDisplayWidth(t *testing.T) {
 	if displayWidth(lines[0]) != displayWidth(lines[1]) {
 		t.Fatalf("visual widths differ: tiles=%d keys=%d\n%s", displayWidth(lines[0]), displayWidth(lines[1]), got)
 	}
-	if displayWidth("九") != 2 || displayWidth("①") != 2 || displayWidth("1") != 1 {
+	if lines[0] != "牌│一 │ ① │ ② │ 1 │東 │白 │" || lines[1] != "键│01 │02 │03 │04 │05 │06 │" {
+		t.Fatalf("tile/index cells are not aligned one-to-one:\n%s", got)
+	}
+	if displayWidth("九") != 2 || displayWidth("①") != 1 || displayWidth("1") != 1 {
 		t.Fatalf("unexpected terminal widths")
 	}
 }

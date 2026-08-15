@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lmf112358/moyu-mahjiong-cli/internal/game"
+	"github.com/LimitlessMindForce/moyu-mahjiong-cli/internal/game"
 )
 
 type DisplayMode string
@@ -73,14 +73,14 @@ func (c *Controller) Decide(d game.Decision) game.Action {
 		}
 		line = strings.TrimSpace(line)
 		command := strings.ToLower(line)
-		if command == "q" || command == "quit" {
+		if line == "q" || command == "quit" {
 			return game.Action{Kind: game.ActQuit}
 		}
-		if command == "h" || command == "help" {
+		if line == "h" || command == "help" {
 			fmt.Fprintln(c.Out, "输入手牌下方数字出牌；特殊动作输入大写字母；a 自动出牌；q 退出。")
 			continue
 		}
-		if command == "a" {
+		if line == "a" {
 			for _, o := range d.Options {
 				if o.Action.Kind == game.ActDiscard {
 					return o.Action
@@ -108,17 +108,12 @@ func slotInput(d game.Decision, input string) (game.Action, bool) {
 	if err != nil || n < 1 {
 		return game.Action{}, false
 	}
-	hasDiscard := false
 	for _, o := range d.Options {
 		if o.Action.Kind == game.ActDiscard {
-			hasDiscard = true
 			if o.Action.Index == n-1 {
 				return o.Action, true
 			}
 		}
-	}
-	if !hasDiscard && n <= len(d.Options) {
-		return d.Options[n-1].Action, true
 	}
 	return game.Action{}, false
 }
@@ -466,9 +461,11 @@ func isCombining(r rune) bool {
 		r >= 0x1dc0 && r <= 0x1dff || r >= 0x20d0 && r <= 0x20ff || r >= 0xfe20 && r <= 0xfe2f
 }
 
+// Circled digits are East Asian Ambiguous and stay single-width here so the
+// stealth-mode tile cells line up with their two-digit hand indices.
 func isWide(r rune) bool {
 	return r >= 0x1100 && (r <= 0x115f || r == 0x2329 || r == 0x232a ||
-		r >= 0x2460 && r <= 0x24ff || r >= 0x2e80 && r <= 0xa4cf && r != 0x303f ||
+		r >= 0x2e80 && r <= 0xa4cf && r != 0x303f ||
 		r >= 0xac00 && r <= 0xd7a3 || r >= 0xf900 && r <= 0xfaff ||
 		r >= 0xfe10 && r <= 0xfe19 || r >= 0xfe30 && r <= 0xfe6f ||
 		r >= 0xff00 && r <= 0xff60 || r >= 0xffe0 && r <= 0xffe6 ||

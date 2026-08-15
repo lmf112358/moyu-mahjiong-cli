@@ -34,6 +34,9 @@ type Engine struct {
 	log                               []string
 	firstTurn                         bool
 	aborted                           bool
+	rinshan                           bool
+	riichiJustDeclared                int
+	missedRon                         []bool
 }
 
 func NewEngine(cfg Config, names []string, cs []Controller) *Engine {
@@ -50,7 +53,7 @@ func NewEngine(cfg Config, names []string, cs []Controller) *Engine {
 			cfg.StartScore = 25000
 		}
 	}
-	e := &Engine{Config: cfg, Controllers: cs, roundWind: 27, lastDiscard: NoTile}
+	e := &Engine{Config: cfg, Controllers: cs, roundWind: 27, lastDiscard: NoTile, riichiJustDeclared: -1, missedRon: make([]bool, cfg.Players)}
 	for i := 0; i < cfg.Players; i++ {
 		name := fmt.Sprintf("玩家%d", i+1)
 		if i < len(names) && names[i] != "" {
@@ -115,28 +118,20 @@ func (e *Engine) playHand() (dealerWon bool, exhaustive bool) {
 		if drawn == NoTile {
 			return e.exhaustiveDraw(), true
 		}
-		var discard Tile
-		for {
-			outcome, chosen := e.drawDecision(e.turn, drawn)
-			if outcome == ActQuit {
-				e.aborted = true
-				e.say(e.Players[e.turn].Name + " 离开了牌局")
-				return false, false
-			}
-			if outcome == ActTsumo {
-				e.win([]int{e.turn}, e.turn, true, drawn, false)
-				return e.turn == e.dealer, false
-			}
-			if outcome == ActKita || outcome == ActKan {
-				if len(e.Players[e.turn].Hand) == 0 {
-					return false, false
-				}
-				drawn = e.Players[e.turn].Hand[len(e.Players[e.turn].Hand)-1]
-				continue
-			}
-			discard = chosen
-			break
+		outcome, chosen, ok := e.resolveDrawDecision(e.turn, drawn)
+		if !ok {
+			return e.exhaustiveDraw(), true
 		}
+		if outcome == ActQuit {
+			e.aborted = true
+			e.say(e.Players[e.turn].Name + " 离开了牌局")
+			return false, false
+		}
+		if outcome == ActTsumo {
+			e.win([]int{e.turn}, e.turn, true, chosen, false)
+			return e.turn == e.dealer, false
+		}
+		discard := chosen
 		e.discard(e.turn, discard)
 		from, tile := e.turn, discard
 		for {
@@ -149,9 +144,23 @@ func (e *Engine) playHand() (dealerWon bool, exhaustive bool) {
 				e.turn = (from + 1) % e.Config.Players
 				break
 			}
-			e.call(caller, from, kind, tile, used)
+			replacement := e.call(caller, from, kind, tile, used)
 			e.turn = caller
-			out, nextDiscard := e.afterCallDecision(caller)
+			var out ActionKind
+			var nextDiscard Tile
+			if kind == Kan {
+				var ok bool
+				out, nextDiscard, ok = e.resolveDrawDecision(caller, replacement)
+				if !ok {
+					return e.exhaustiveDraw(), true
+				}
+				if out == ActTsumo {
+					e.win([]int{caller}, caller, true, nextDiscard, false)
+					return caller == e.dealer, false
+				}
+			} else {
+				out, nextDiscard = e.afterCallDecision(caller)
+			}
 			if out == ActQuit {
 				e.aborted = true
 				return false, false
@@ -177,6 +186,13 @@ func (e *Engine) setupHand() {
 	e.rinshanPos = 0
 	e.doraCount = 1
 	e.lastDiscard = NoTile
+	e.rinshan = false
+	e.riichiJustDeclared = -1
+	if len(e.missedRon) != len(e.Players) {
+		e.missedRon = make([]bool, len(e.Players))
+	} else {
+		clear(e.missedRon)
+	}
 	for i := range e.Players {
 		e.Players[i].Hand = nil
 		e.Players[i].Melds = nil
@@ -203,18 +219,22 @@ func (e *Engine) drawLive(i int) Tile {
 	}
 	t := e.wall[e.wallPos]
 	e.wallPos++
+	e.clearTemporaryFuritenOnDraw(i)
 	e.Players[i].Hand = append(e.Players[i].Hand, t)
 	SortTiles(e.Players[i].Hand)
+	e.rinshan = false
 	return t
 }
 func (e *Engine) drawRinshan(i int) Tile {
-	if e.rinshanPos >= 4 {
+	if e.rinshanPos >= 4 || e.liveLeft() <= 0 {
 		return NoTile
 	}
 	t := e.dead[e.rinshanPos]
 	e.rinshanPos++
+	e.clearTemporaryFuritenOnDraw(i)
 	e.Players[i].Hand = append(e.Players[i].Hand, t)
 	SortTiles(e.Players[i].Hand)
+	e.rinshan = true
 	return t
 }
 func (e *Engine) liveLeft() int { return len(e.wall) - e.wallPos - e.rinshanPos }
@@ -241,6 +261,7 @@ func (e *Engine) drawDecision(i int, drawn Tile) (ActionKind, Tile) {
 		opts = append(opts, Option{"自摸", Action{Kind: ActTsumo, Tile: drawn}})
 	}
 	if !p.Riichi {
+		canReplace := e.liveLeft() > 0 && e.rinshanPos < 4
 		seen := map[Tile]bool{}
 		for _, t := range uniqueTiles(p.Hand) {
 			b := t.Base()
@@ -248,11 +269,11 @@ func (e *Engine) drawDecision(i int, drawn Tile) (ActionKind, Tile) {
 				continue
 			}
 			seen[b] = true
-			if countTileNorm(p.Hand, t) == 4 {
+			if canReplace && countTileNorm(p.Hand, t) == 4 {
 				opts = append(opts, Option{"暗杠 " + b.String(), Action{Kind: ActKan, Tile: b}})
 			}
 		}
-		if e.Config.Players == 3 && countTile(p.Hand, 30) > 0 {
+		if canReplace && e.Config.Players == 3 && countTile(p.Hand, 30) > 0 {
 			opts = append(opts, Option{"拔北", Action{Kind: ActKita, Tile: 30}})
 		}
 		if isClosed(*p) && p.Score >= 1000 {
@@ -276,21 +297,32 @@ func (e *Engine) drawDecision(i int, drawn Tile) (ActionKind, Tile) {
 	case ActQuit:
 		return ActQuit, NoTile
 	case ActKita:
-		e.doKita(i)
-		return ActKita, NoTile
+		return ActKita, e.doKita(i)
 	case ActKan:
-		e.doAnkan(i, a.Tile)
-		return ActKan, NoTile
+		return ActKan, e.doAnkan(i, a.Tile)
 	case ActRiichi:
 		p.Score -= 1000
 		e.sticks++
 		p.Riichi = true
 		p.Ippatsu = true
+		e.riichiJustDeclared = i
 		e.say(p.Name + " 立直！")
 		return ActDiscard, a.Tile
 	default:
 		return ActDiscard, a.Tile
 	}
+}
+
+func (e *Engine) resolveDrawDecision(i int, drawn Tile) (ActionKind, Tile, bool) {
+	for drawn != NoTile {
+		outcome, chosen := e.drawDecision(i, drawn)
+		if outcome == ActKita || outcome == ActKan {
+			drawn = chosen
+			continue
+		}
+		return outcome, chosen, true
+	}
+	return ActPass, NoTile, false
 }
 
 func (e *Engine) afterCallDecision(i int) (ActionKind, Tile) {
@@ -309,7 +341,7 @@ func (e *Engine) reactions(from int, t Tile) ([]int, int, MeldKind, []Tile) {
 		i := (from + d) % e.Config.Players
 		p := &e.Players[i]
 		h := append(append([]Tile(nil), p.Hand...), t)
-		p.Furiten = e.isFuriten(i)
+		p.Furiten = e.isFuriten(i) || e.missedRon[i]
 		if !p.Furiten && IsComplete(h, len(p.Melds)) {
 			copyP := *p
 			copyP.Hand = h
@@ -318,6 +350,7 @@ func (e *Engine) reactions(from int, t Tile) ([]int, int, MeldKind, []Tile) {
 				if a.Kind == ActRon {
 					winners = append(winners, i)
 				} else {
+					e.missedRon[i] = true
 					p.Furiten = true
 				}
 			}
@@ -334,7 +367,7 @@ func (e *Engine) reactions(from int, t Tile) ([]int, int, MeldKind, []Tile) {
 			continue
 		}
 		opts := []Option{}
-		if countTileNorm(p.Hand, t) >= 3 {
+		if e.liveLeft() > 0 && e.rinshanPos < 4 && countTileNorm(p.Hand, t) >= 3 {
 			opts = append(opts, Option{"大明杠", Action{Kind: ActKan, Tile: t, Tiles: []Tile{t, t, t}}})
 		}
 		if countTileNorm(p.Hand, t) >= 2 {
@@ -351,9 +384,9 @@ func (e *Engine) reactions(from int, t Tile) ([]int, int, MeldKind, []Tile) {
 			}
 		}
 	}
-	// Only the next player may chi.
+	// Only the next player may chi; Mahjong Soul-style sanma forbids chi.
 	i := (from + 1) % e.Config.Players
-	if !e.Players[i].Riichi && !t.IsHonor() {
+	if e.Config.Players == 4 && !e.Players[i].Riichi && !t.IsHonor() {
 		combos := chiCombos(e.Players[i].Hand, t)
 		if len(combos) > 0 {
 			opts := []Option{}
@@ -381,18 +414,23 @@ func (e *Engine) discard(i int, t Tile) {
 	p.River = append(p.River, t)
 	e.lastDiscard = t
 	e.lastFrom = i
-	for j := range e.Players {
-		if j != i {
-			e.Players[j].Ippatsu = false
+	if p.Ippatsu {
+		if e.riichiJustDeclared == i {
+			e.riichiJustDeclared = -1
+		} else {
+			p.Ippatsu = false
 		}
 	}
 	e.say(fmt.Sprintf("%s 打出 %s", p.Name, t.String()))
 }
-func (e *Engine) call(i, from int, k MeldKind, t Tile, used []Tile) {
+func (e *Engine) call(i, from int, k MeldKind, t Tile, used []Tile) Tile {
+	if k == Kan && (e.liveLeft() <= 0 || e.rinshanPos >= 4) {
+		return NoTile
+	}
 	p := &e.Players[i]
 	removed, newHand, ok := removeTilesNormList(p.Hand, used)
 	if !ok {
-		return
+		return NoTile
 	}
 	p.Hand = newHand
 	tiles := append(append([]Tile(nil), removed...), t)
@@ -407,14 +445,18 @@ func (e *Engine) call(i, from int, k MeldKind, t Tile, used []Tile) {
 	e.say(fmt.Sprintf("%s %s！", p.Name, k))
 	if k == Kan {
 		e.doraCount++
-		e.drawRinshan(i)
+		return e.drawRinshan(i)
 	}
+	return NoTile
 }
-func (e *Engine) doAnkan(i int, t Tile) {
+func (e *Engine) doAnkan(i int, t Tile) Tile {
+	if e.liveLeft() <= 0 || e.rinshanPos >= 4 {
+		return NoTile
+	}
 	p := &e.Players[i]
 	removed, newHand, ok := removeTilesNormList(p.Hand, []Tile{t, t, t, t})
 	if !ok {
-		return
+		return NoTile
 	}
 	p.Hand = newHand
 	SortTiles(removed)
@@ -423,15 +465,27 @@ func (e *Engine) doAnkan(i int, t Tile) {
 	for j := range e.Players {
 		e.Players[j].Ippatsu = false
 	}
-	e.drawRinshan(i)
+	drawn := e.drawRinshan(i)
 	e.say(p.Name + " 暗杠 " + t.String())
+	return drawn
 }
-func (e *Engine) doKita(i int) {
+func (e *Engine) doKita(i int) Tile {
+	if e.liveLeft() <= 0 || e.rinshanPos >= 4 {
+		return NoTile
+	}
 	p := &e.Players[i]
-	p.Hand, _ = removeTiles(p.Hand, 30)
+	var ok bool
+	p.Hand, ok = removeTiles(p.Hand, 30)
+	if !ok {
+		return NoTile
+	}
 	p.Kita++
-	e.drawLive(i)
+	for j := range e.Players {
+		e.Players[j].Ippatsu = false
+	}
+	drawn := e.drawRinshan(i)
 	e.say(p.Name + " 拔北")
+	return drawn
 }
 
 func (e *Engine) win(winners []int, from int, tsumo bool, t Tile, chankan bool) {
@@ -560,17 +614,26 @@ func (e *Engine) exhaustiveDraw() bool {
 }
 
 func (e *Engine) context(w, from int, tsumo bool, t Tile) WinContext {
-	return WinContext{Winner: w, From: from, WinTile: t, Tsumo: tsumo, Riichi: e.Players[w].Riichi, Ippatsu: e.Players[w].Ippatsu, Dealer: w == e.dealer, SeatWind: Tile(27 + (w-e.dealer+e.Config.Players)%e.Config.Players), RoundWind: e.roundWind, DoraIndicators: e.doraIndicators(), UraIndicators: e.uraIndicators(), Haitei: tsumo && e.liveLeft() == 0, Houtei: !tsumo && e.liveLeft() == 0, Players: e.Config.Players}
+	return WinContext{Winner: w, From: from, WinTile: t, Tsumo: tsumo, Riichi: e.Players[w].Riichi, Ippatsu: e.Players[w].Ippatsu, Dealer: w == e.dealer, SeatWind: Tile(27 + (w-e.dealer+e.Config.Players)%e.Config.Players), RoundWind: e.roundWind, DoraIndicators: e.doraIndicators(), UraIndicators: e.uraIndicators(), Rinshan: tsumo && e.rinshan, Haitei: tsumo && !e.rinshan && e.liveLeft() == 0, Houtei: !tsumo && !e.rinshan && e.liveLeft() == 0, Players: e.Config.Players}
 }
 func (e *Engine) isFuriten(i int) bool {
 	p := e.Players[i]
 	waits := Waits(p.Hand, len(p.Melds), e.Config.Players)
 	for _, t := range p.River {
-		if contains(waits, t) {
-			return true
+		for _, wait := range waits {
+			if wait.Base() == t.Base() {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func (e *Engine) clearTemporaryFuritenOnDraw(i int) {
+	if !e.Players[i].Riichi {
+		e.missedRon[i] = false
+	}
+	e.Players[i].Furiten = e.isFuriten(i) || e.missedRon[i]
 }
 func (e *Engine) decide(i int, prompt string, opts []Option) Action {
 	v := e.viewFor(i)

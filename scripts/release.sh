@@ -15,7 +15,7 @@ set -euo pipefail
 
 # ---------- 配置 ----------
 MAIN_GO="cmd/majiang/main.go"
-OWNER_REPO="lmf112358/moyu-mahjiong-cli"
+OWNER_REPO="LimitlessMindForce/moyu-mahjiong-cli"
 DIST="dist"
 APP="majiang"
 

@@ -6,7 +6,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/lmf112358/moyu-mahjiong-cli/internal/game"
+	"github.com/LimitlessMindForce/moyu-mahjiong-cli/internal/game"
 )
 
 func TestPeerDecisionProtocol(t *testing.T) {
@@ -29,6 +29,27 @@ func TestPeerDecisionProtocol(t *testing.T) {
 	}
 	if got := <-done; got.Kind != game.ActPass {
 		t.Fatalf("got %v", got.Kind)
+	}
+}
+
+func TestPeerDecisionRejectsWrongMessageType(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	p := &Peer{conn: server, enc: json.NewEncoder(server), dec: json.NewDecoder(bufio.NewReader(server))}
+	done := make(chan game.Action, 1)
+	go func() { done <- p.Decide(game.Decision{Prompt: "test"}) }()
+	dec := json.NewDecoder(bufio.NewReader(client))
+	enc := json.NewEncoder(client)
+	var msg Message
+	if err := dec.Decode(&msg); err != nil {
+		t.Fatal(err)
+	}
+	action := game.Action{Kind: game.ActPass}
+	if err := enc.Encode(Message{Type: "settlement_ack", Action: &action}); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-done; got.Kind != game.ActQuit {
+		t.Fatalf("wrong message type accepted as %v", got.Kind)
 	}
 }
 

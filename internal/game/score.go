@@ -2,7 +2,6 @@ package game
 
 import (
 	"math"
-	"sort"
 	"strings"
 )
 
@@ -231,13 +230,13 @@ func evaluateShape(p Player, s Shape, c WinContext) ScoreResult {
 	baseHan := r.Han
 	doraHan := 0
 	for _, ind := range c.DoraIndicators {
-		doraHan += countTile(all, DoraFrom(ind))
+		doraHan += countTile(all, doraFrom(ind, c.Players))
 	}
 	r.Han += doraHan + akaHan
 	uraHan := 0
 	if c.Riichi {
 		for _, ind := range c.UraIndicators {
-			uraHan += countTile(all, DoraFrom(ind))
+			uraHan += countTile(all, doraFrom(ind, c.Players))
 		}
 		r.Han += uraHan
 	}
@@ -342,19 +341,10 @@ func calculateFu(p Player, s Shape, c WinContext, closed bool) int {
 		fu += v
 	}
 	// Closed waits (tanki/kanchan/penchan) add 2 fu.
-	if s.Pair == c.WinTile {
+	if s.Pair == c.WinTile.Base() {
 		fu += 2
-	} else {
-		for _, g := range s.Groups {
-			if !g.Sequence {
-				continue
-			}
-			r := c.WinTile.Rank() - g.Tile.Rank()
-			if r == 1 || (g.Tile.Rank() == 1 && r == 2) || (g.Tile.Rank() == 7 && r == 0) {
-				fu += 2
-				break
-			}
-		}
+	} else if hasClosedWait(s, c.WinTile) {
+		fu += 2
 	}
 	if fu == 20 && !c.Tsumo {
 		fu = 30
@@ -407,7 +397,7 @@ func isAllTripletsAndConcealed(s Shape, p Player, c WinContext) bool {
 			return false
 		}
 	}
-	return c.Tsumo || s.Pair == c.WinTile
+	return c.Tsumo || s.Pair == c.WinTile.Base()
 }
 func contains(ts []Tile, t Tile) bool {
 	for _, x := range ts {
@@ -435,9 +425,16 @@ func dragonTriplets(ts []Tile) int {
 	return n
 }
 func minTile(ts []Tile) Tile {
-	x := append([]Tile(nil), ts...)
-	sort.Slice(x, func(i, j int) bool { return x[i] < x[j] })
-	return x[0]
+	if len(ts) == 0 {
+		return NoTile
+	}
+	min := ts[0].Base()
+	for _, t := range ts[1:] {
+		if b := t.Base(); b < min {
+			min = b
+		}
+	}
+	return min
 }
 func allMatch(ts []Tile, f func(Tile) bool) bool {
 	for _, t := range ts {
@@ -484,19 +481,42 @@ func isPinfu(s Shape, seq []Tile, c WinContext) bool {
 	if s.Pair >= 31 || s.Pair == c.SeatWind || s.Pair == c.RoundWind {
 		return false
 	}
-	if s.Pair == c.WinTile {
+	if s.Pair == c.WinTile.Base() {
 		return false
 	}
+	return !hasClosedWait(s, c.WinTile)
+}
+
+func hasClosedWait(s Shape, win Tile) bool {
+	hasClosed := false
 	for _, g := range s.Groups {
 		if !g.Sequence {
 			continue
 		}
-		r := c.WinTile.Rank() - g.Tile.Rank()
-		if r == 1 || (g.Tile.Rank() == 1 && r == 2) || (g.Tile.Rank() == 7 && r == 0) {
+		containsWin, closed := sequenceWait(g.Tile, win)
+		if !containsWin {
+			continue
+		}
+		if !closed {
 			return false
 		}
+		hasClosed = true
 	}
-	return true
+	return hasClosed
+}
+
+func sequenceWait(start, win Tile) (containsWin, closed bool) {
+	start = start.Base()
+	win = win.Base()
+	if start.IsHonor() || win.IsHonor() || start.Suit() != win.Suit() {
+		return false, false
+	}
+	offset := int(win) - int(start)
+	if offset < 0 || offset > 2 {
+		return false, false
+	}
+	closed = offset == 1 || start.Rank() == 1 && offset == 2 || start.Rank() == 7 && offset == 0
+	return true, closed
 }
 func itoa(n int) string {
 	const d = "0123456789"

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lmf112358/moyu-mahjiong-cli/internal/game"
-	"github.com/lmf112358/moyu-mahjiong-cli/internal/netplay"
-	"github.com/lmf112358/moyu-mahjiong-cli/internal/terminal"
+	"github.com/LimitlessMindForce/moyu-mahjiong-cli/internal/game"
+	"github.com/LimitlessMindForce/moyu-mahjiong-cli/internal/netplay"
+	"github.com/LimitlessMindForce/moyu-mahjiong-cli/internal/terminal"
 )
 
 const version = "0.8.2"

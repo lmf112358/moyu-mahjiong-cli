@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lmf112358/moyu-mahjiong-cli/internal/game"
+	"github.com/LimitlessMindForce/moyu-mahjiong-cli/internal/game"
 )
 
 type Message struct {
@@ -30,6 +30,12 @@ type Peer struct {
 	Name string
 }
 
+const (
+	handshakeTimeout = 15 * time.Second
+	responseTimeout  = 5 * time.Minute
+	writeTimeout     = 30 * time.Second
+)
+
 func Listen(addr string, want int, onJoin func(int, string)) (net.Listener, []*Peer, error) {
 	if want <= 0 {
 		return nil, nil, errors.New("联机至少需要 2 位真人（含房主）")
@@ -45,6 +51,7 @@ func Listen(addr string, want int, onJoin func(int, string)) (net.Listener, []*P
 			ln.Close()
 			return nil, nil, err
 		}
+		_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
 		p := &Peer{conn: conn, enc: json.NewEncoder(conn), dec: json.NewDecoder(bufio.NewReader(conn))}
 		var hello Message
 		if err = p.dec.Decode(&hello); err != nil || hello.Type != "hello" {
@@ -52,8 +59,12 @@ func Listen(addr string, want int, onJoin func(int, string)) (net.Listener, []*P
 			continue
 		}
 		p.Name = hello.Name
+		if err = p.enc.Encode(Message{Type: "welcome", Text: fmt.Sprintf("已加入房间（%d/%d）", len(peers)+1, want)}); err != nil {
+			conn.Close()
+			continue
+		}
+		_ = conn.SetDeadline(time.Time{})
 		peers = append(peers, p)
-		p.enc.Encode(Message{Type: "welcome", Text: fmt.Sprintf("已加入房间（%d/%d）", len(peers), want)})
 		if onJoin != nil {
 			onJoin(len(peers), p.Name)
 		}
@@ -64,11 +75,13 @@ func Listen(addr string, want int, onJoin func(int, string)) (net.Listener, []*P
 func (p *Peer) Decide(d game.Decision) game.Action {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	_ = p.conn.SetDeadline(time.Now().Add(responseTimeout))
+	defer p.conn.SetDeadline(time.Time{})
 	if err := p.enc.Encode(Message{Type: "decision", Decision: &d}); err != nil {
 		return game.Action{Kind: game.ActQuit}
 	}
 	var m Message
-	if err := p.dec.Decode(&m); err != nil || m.Action == nil {
+	if err := p.dec.Decode(&m); err != nil || m.Type != "action" || m.Action == nil {
 		return game.Action{Kind: game.ActQuit}
 	}
 	return *m.Action
@@ -76,18 +89,23 @@ func (p *Peer) Decide(d game.Decision) game.Action {
 func (p *Peer) Finish(r game.MatchResult) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.enc.Encode(Message{Type: "result", Result: &r})
+	_ = p.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	_ = p.enc.Encode(Message{Type: "result", Result: &r})
 	p.conn.Close()
 }
 
 func (p *Peer) ShowSettlement(s game.Settlement) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	_ = p.conn.SetDeadline(time.Now().Add(responseTimeout))
+	defer p.conn.SetDeadline(time.Time{})
 	if err := p.enc.Encode(Message{Type: "settlement", Settlement: &s}); err != nil {
 		return
 	}
 	var ack Message
-	_ = p.dec.Decode(&ack)
+	if err := p.dec.Decode(&ack); err != nil || ack.Type != "settlement_ack" {
+		return
+	}
 }
 
 func Join(addr, name string, controller game.Controller) (game.MatchResult, error) {
@@ -96,6 +114,7 @@ func Join(addr, name string, controller game.Controller) (game.MatchResult, erro
 		return game.MatchResult{}, err
 	}
 	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(bufio.NewReader(conn))
 	if err = enc.Encode(Message{Type: "hello", Name: name}); err != nil {
@@ -108,6 +127,7 @@ func Join(addr, name string, controller game.Controller) (game.MatchResult, erro
 		}
 		switch m.Type {
 		case "welcome":
+			_ = conn.SetDeadline(time.Time{})
 			fmt.Println(m.Text)
 			fmt.Println("等待房主开始游戏…（人数没齐时会一直等，可随时 Ctrl+C 退出）")
 		case "decision":

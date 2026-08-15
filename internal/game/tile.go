@@ -133,7 +133,19 @@ func FullWall(players int) []Tile {
 }
 
 func DoraFrom(ind Tile) Tile {
+	return doraFrom(ind, 4)
+}
+
+func doraFrom(ind Tile, players int) Tile {
 	ind = ind.Base()
+	if players == 3 {
+		if ind == 0 {
+			return 8
+		}
+		if ind == 8 {
+			return 0
+		}
+	}
 	switch {
 	case ind < 27:
 		base := ind / 9 * 9

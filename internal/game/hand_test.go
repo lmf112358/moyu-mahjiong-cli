@@ -47,6 +47,15 @@ func TestDoraWrap(t *testing.T) {
 	}
 }
 
+func TestSanmaManzuDoraWrap(t *testing.T) {
+	if got := doraFrom(0, 3); got != 8 {
+		t.Fatalf("sanma DoraFrom(一万)=%v want 九万", got)
+	}
+	if got := doraFrom(8, 3); got != 0 {
+		t.Fatalf("sanma DoraFrom(九万)=%v want 一万", got)
+	}
+}
+
 // Cases used by Poker-sang/Mahjong's sample program: thirteen-sided
 // kokushi and the nine-sided pure-suit shape 1112345678999.
 func TestReferenceReadyHandCases(t *testing.T) {
@@ -100,6 +109,20 @@ func TestPinfuTsumoIsTwentyFu(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("missing pinfu detail: %+v", r.YakuItems)
+	}
+}
+
+func TestPinfuWaitDoesNotMatchSequenceInAnotherSuit(t *testing.T) {
+	p := Player{Hand: tiles(2, 3, 4, 12, 13, 14, 18, 19, 20, 24, 25, 26, 29, 29), Riichi: true}
+	r, ok := EvaluateWin(p, WinContext{WinTile: 4, Riichi: true, SeatWind: 28, RoundWind: 27, Players: 4})
+	if !ok || r.Han != 2 || r.Fu != 30 {
+		t.Fatalf("cross-suit sequence changed pinfu scoring: score=%+v ok=%v", r, ok)
+	}
+}
+
+func TestRedFiveMeldUsesBaseTileAsSequenceStart(t *testing.T) {
+	if got := minTile([]Tile{Aka5Man, 5, 6}); got != 4 {
+		t.Fatalf("red 567 sequence start=%v want 五万", got)
 	}
 }
 
