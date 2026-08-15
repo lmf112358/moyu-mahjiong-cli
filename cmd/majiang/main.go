@@ -14,7 +14,7 @@ import (
 	"github.com/LimitlessMindForce/moyu-mahjiong-cli/internal/terminal"
 )
 
-const version = "0.8.2"
+const version = "0.8.3"
 
 func main() {
 	fmt.Println(`  __  __  ___  __   __ _   _       _ ___   _   _   _  ___ `)
